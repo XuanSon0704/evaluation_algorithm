@@ -151,7 +151,7 @@ def plot_multi_k_analysis_lof(performance_results):
     metric_names = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
     
     # Màu sắc cho các đường  
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#bd679965", "#8c4b4e00", '#e377c2', '#7f7f7f', '#bcbd22', "#1785cf57"]
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#9467bd", "#8c564b", '#e377c2', '#7f7f7f', '#bcbd22', "#17becf"]
 
     
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
