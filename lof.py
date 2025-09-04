@@ -10,14 +10,14 @@ import matplotlib.pyplot as plt
 # Bỏ qua các cảnh báo
 warnings.filterwarnings('ignore')
 
-# THAY ĐỔI: Thay thế LoOPAlgorithm bằng LOFAlgorithm
+# LOFAlgorithm
 class LOFAlgorithm:
     
     def __init__(self, k=20, contamination=0.1):
         # Chuyển đổi k thành n_neighbors
         self.n_neighbors = k
         self.contamination = contamination
-        # novelty=True là bắt buộc để có thể dự đoán trên dữ liệu mới
+        # novelty=True -> để có thể dự đoán trên dữ liệu mới
         self.model = LocalOutlierFactor(n_neighbors=self.n_neighbors, contamination=self.contamination, novelty=True)
         
     def fit(self, X_train_scaled):
@@ -102,7 +102,7 @@ class StreamingAnomalyDetector:
                     X_train_scaled = scaler.fit_transform(X_train)
                     X_current_scaled = scaler.transform(X_current)
                     
-                    # KNNAlgorithm
+                    # LOFAlgorithm
                     model = LOFAlgorithm(k=self.k_neighbors, contamination=self.contamination)
                     
                     if model.fit(X_train_scaled):
@@ -140,7 +140,7 @@ class StreamingAnomalyDetector:
         
         return {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1_score': f1, 'confusion_matrix': cm, 'detection_delay': detection_delay, 'total_samples': len(y_true), 'attack_samples': np.sum(y_true == attack_code), 'detected_attacks': np.sum((y_true == attack_code) & (y_pred == attack_code))}
 
-# FUNCTION VẼ BIỂU ĐỒ
+#  VẼ BIỂU ĐỒ
 def plot_multi_k_analysis_lof(performance_results):
     """
     Vẽ 4 biểu đồ riêng biệt, mỗi metric một biểu đồ với các đường k khác nhau
