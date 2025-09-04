@@ -202,7 +202,7 @@ def plot_multi_k_analysis_lof(performance_results):
         ax.set_ylim(0, 105)
         ax.set_xticks(window_sizes)
         
-        # Legend với style đẹp hơn
+        
         ax.legend(loc='best', frameon=True, fancybox=True, shadow=True, 
                  fontsize=11, ncol=2, columnspacing=0.8)
     
