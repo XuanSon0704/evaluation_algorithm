@@ -145,7 +145,7 @@ def plot_multi_k_analysis_lof(performance_results):
     """
     Vẽ 4 biểu đồ riêng biệt, mỗi metric một biểu đồ với các đường k khác nhau
     """
-    window_sizes = [90, 100, 120, 150, 180, 200]
+    window_sizes = [10,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]
     k_values = sorted(list(performance_results.keys()))
     metrics = ['accuracy', 'precision', 'recall', 'f1_score']
     metric_names = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
