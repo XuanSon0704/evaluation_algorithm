@@ -211,7 +211,7 @@ def plot_multi_k_analysis_lof(performance_results):
     plt.tight_layout()
     plt.subplots_adjust(top=0.93)
     plt.savefig('lof_metrics.png', dpi=300, bbox_inches='tight')
-    plt.savefig('lof_metrics.png')
+    
     
     
 def main():
