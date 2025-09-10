@@ -58,7 +58,7 @@ class OptimizedLOF:
             return np.zeros(X_test_scaled.shape[0])
 
 def process_single_configuration_fixed(args):
-    """Xử lý một cấu hình (k, window_size) cho dataset tĩnh"""
+  
     k, window_size, data_file_path, selected_features, attack_label, sample_ratio = args
     
     process_id = os.getpid()
