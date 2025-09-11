@@ -52,7 +52,7 @@ class KNNAlgorithm:
         scores = self.decision_function(X_test_scaled)
         return (scores > self.adaptive_threshold_).astype(int)
 
-# Class StreamingAnomalyDetector giữ nguyên logic, chỉ thay đổi thuật toán gọi đến
+
 class StreamingAnomalyDetector:
     def __init__(self, window_size=180, k_neighbors=15, contamination=0.01):
         self.window_size = window_size
@@ -189,15 +189,15 @@ def plot_multi_k_analysis_knn(performance_results):
                 else:
                     values.append(0)  # Giá trị mặc định nếu không có dữ liệu
             
-            # Vẽ đường (không có marker, linewidth khác nhau để phân biệt)
-            linewidth = 3.0 + (i * 0.3)  # Độ dày khác nhau để phân biệt khi chồng lên
+           
+            linewidth = 3.0 + (i * 0.3)  
             line = ax.plot(window_sizes, values, 
                           linewidth=linewidth, 
                           color=colors[i % len(colors)], 
                           label=f'k={k}',
                           alpha=0.8)  # Độ trong suốt để nhìn thấy đường bên dưới
             
-            # Thêm chú thích k trên đường (ở điểm cuối) với background nổi bật
+           
             if values:  # Kiểm tra nếu có dữ liệu
                 ax.annotate(f'k={k}', 
                            xy=(window_sizes[-1], values[-1]), 
@@ -220,7 +220,7 @@ def plot_multi_k_analysis_knn(performance_results):
         ax.set_ylim(0, 105)
         ax.set_xticks(window_sizes)
         
-        # Legend với style đẹp hơn
+        
         ax.legend(loc='best', frameon=True, fancybox=True, shadow=True, 
                  fontsize=11, ncol=2, columnspacing=0.8)
     
@@ -235,8 +235,8 @@ def plot_multi_k_analysis_knn(performance_results):
 def main():
 
     # Cấu hình tham số
-    K_VALUES = [10, 12, 15]  # Các giá trị k để test
-    WINDOW_SIZES = [90, 100, 120, 150, 180, 200]  # Các giá trị window_size
+    K_VALUES = [10, 12, 15]  
+    WINDOW_SIZES = [90, 100, 120, 150, 180, 200]  
     CONTAMINATION = 0.01
     
     selected_features = ['Packets_s', 'Bytes_s', 'New_Flow_s']
@@ -252,7 +252,7 @@ def main():
     # Load data một lần
     df = pd.read_csv(data_file_path)
     
-    # Dictionary để lưu kết quả: {k_value: {window_size: performance}}
+    # Dictionary để lưu kết quả
     all_results = {}
     
     total_combinations = len(K_VALUES) * len(WINDOW_SIZES)
