@@ -252,7 +252,7 @@ def plot_results_corrected(results_df, attack_label):
     """Vẽ biểu đồ kết quả với format chuẩn"""
     plt.style.use('default')
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    fig.suptitle(f'LOF Performance Analysis - {attack_label} Detection\n(Dataset: 1390 BENIGN + ~185k ATTACK flows)', 
+    fig.suptitle(f'LOF Performance Analysis - {attack_label} Detection', 
                  fontsize=14, fontweight='bold')
     
     k_values = sorted(results_df['k'].unique())
