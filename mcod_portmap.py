@@ -2,12 +2,10 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.cluster import DBSCAN
 import time
 import warnings
 from collections import deque
 import matplotlib.pyplot as plt
-import seaborn as sns
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
 import os
@@ -18,37 +16,56 @@ warnings.filterwarnings('ignore')
 
 class MicroCluster:
     #Cấu trúc micro-cluster cho MCOD
-    def __init__(self, center, radius, creation_time, points=None):
+    def __init__(self, center, radius, creation_time):
         self.center = np.array(center)
         self.radius = radius
         self.creation_time = creation_time
         self.last_update_time = creation_time
-        self.points = points if points is not None else []
-        self.weight = len(self.points) if self.points else 1
-    
+        
+        self.points = [(np.array(center), creation_time)]  
+        
+        self.weight = len(self.points)
+       
     def add_point(self, point, timestamp):
         # Thêm 1 điểm mới vào micro-cluster
-        self.points.append(point)
-        self.weight += 1
+        self.points.append((np.array(point), timestamp))
+        self.weight = len(self.points)
         self.last_update_time = timestamp
-        # Tính toán center & radius
+        
         self._update_center_radius()
     
     def _update_center_radius(self):
-        if len(self.points) > 0:
-            points_array = np.array(self.points)
+        if len(self.points) >0:
+            points_array = np.array([p for p, _ in self.points])    
             self.center = np.mean(points_array, axis=0)
             if len(self.points) > 1:
-                distances = np.linalg.norm(points_array - self.center, axis=1)
-                self.radius = np.max(distances)
+                dists = np.linalg.norm(points_array - self.center, axis=1)
+                self.radius = np.max(dists)
             else:
-                self.radius = 0.1  # default radius
+                self.radius = 0.1  # bán kính tối thiểu
+                  
+    def remove_old_points(self, current_time, window_size):
+        cutoff = current_time - window_size
+        
+        #Loại bỏ các điểm cũ hơn cutoff
+        self.points = [(p, t) for (p, t) in self.points if t > cutoff]
+        if not self.points:
+            return True # cluster rồng -> xóa
+        
+        # update thuộc tính mới
+        self.weight = len(self.points)
+        self._update_center_radius()
+        self.creation_time = min(t for _, t in self.points)
+        self.last_update_time = max(t for _, t in self.points)
+        
+        return False
+    
     
     def distance_to_center(self, point):
         #Tính khoảng cách từ điểm hiện tại đến center của micro-cluster
         return np.linalg.norm(np.array(point) - self.center)
     
-    def is_inside(self, point):
+    def can_absorb(self, point):
         #Kiểm tra xem điểm có nằm trong micro-cluster không
         return self.distance_to_center(point) <= self.radius
 
@@ -65,36 +82,25 @@ class MCOD:
         self.min_points = min_points
         self.window_size = window_size
         self.micro_clusters = []
-        self.outliers = []
         self.timestamp = 0
-        self.X_train_ = None
         
-    def fit(self, X_train_scaled):
+    def fit(self, X_train):
         """Initialize MCOD with training data"""
-        self.X_train_ = X_train_scaled
-        n_samples_train = self.X_train_.shape[0]
+        self.micro_clusters = []
+        self.timestamp = 0
         
-        if n_samples_train < self.min_points:
-            return False
+        # Process each training point
+        for i, point in enumerate(X_train):
+            self._process_point(point, i)
         
-        try:
-            # Initialize micro-clusters using initial training data
-            self.micro_clusters = []
-            self.outliers = []
-            self.timestamp = 0
-            
-            # Process each training point
-            for i, point in enumerate(X_train_scaled):
-                self._process_point(point, i)
-            
-            return True
-        except Exception as e:
-            print(f"Error in MCOD fit: {e}")
-            return False
+        return len(self.micro_clusters) > 0
+    
     
     def _process_point(self, point, timestamp):
         """Process a single point using MCOD algorithm"""
         self.timestamp = timestamp
+        
+        self._maintain_window()
         
         # Find nearest micro-cluster
         nearest_cluster = None
@@ -107,83 +113,56 @@ class MCOD:
                 nearest_cluster = cluster
         
         # Check if point can be absorbed by existing cluster
-        if nearest_cluster and min_distance <= self.radius:
-            nearest_cluster.add_point(point.tolist(), timestamp)
+        if nearest_cluster and nearest_cluster.can_absorb(point) :
+            nearest_cluster.add_point(point, timestamp)
         else:
             # Create new micro-cluster or mark as outlier
-            new_cluster = MicroCluster(point, self.radius, timestamp, [point.tolist()])
+            new_cluster = MicroCluster(point, self.radius, timestamp)
+            self.micro_clusters.append(new_cluster)
             
-            # Check if can merge with nearby clusters
-            merged = False
-            for i, cluster in enumerate(self.micro_clusters):
-                if cluster.distance_to_center(point) <= self.radius * 2:
-                    # Merge clusters
-                    cluster.points.extend(new_cluster.points)
-                    cluster._update_center_radius()
-                    merged = True
-                    break
-            
-            if not merged:
-                if len(self.micro_clusters) < self.window_size // self.min_points:
-                    self.micro_clusters.append(new_cluster)
-                else:
-                    # Add to outliers if can't create new cluster
-                    self.outliers.append((point.tolist(), timestamp))
-        
-        # Maintain sliding window - remove old clusters
-        self._maintain_window()
-    
     def _maintain_window(self):
-        """Remove old micro-clusters based on sliding window"""
-        current_time = self.timestamp
-        # Remove clusters that are too old
-        self.micro_clusters = [
-            cluster for cluster in self.micro_clusters 
-            if current_time - cluster.creation_time <= self.window_size
-        ]
         
-        # Remove old outliers
-        self.outliers = [
-            (point, time) for point, time in self.outliers
-            if current_time - time <= self.window_size
-        ]
+        current = self.timestamp
+        new_clusters = []
+        for cluster in self.micro_clusters:
+            empty = cluster.remove_old_points(current, self.window_size)
+            if not empty:
+                new_clusters.append(cluster)
+        self.micro_clusters = new_clusters
     
-    def decision_function(self, X_test_scaled):
+    
+    def decision_function(self, X_test):
         if not self.micro_clusters:
-            return np.zeros(X_test_scaled.shape[0])
+            return np.zeros(X_test.shape[0])
         
-        outlier_scores = np.zeros(X_test_scaled.shape[0])
+        outlier_scores = np.zeros(X_test.shape[0])
         
-        for i, point in enumerate(X_test_scaled):
+        for i, point in enumerate(X_test):
             min_distance = float('inf')
-            nearest_cluster_radius = self.radius
+            nearest_cluster_radius = None
             
             # Find distance to nearest micro-cluster
             for cluster in self.micro_clusters:
                 distance = cluster.distance_to_center(point)
                 if distance < min_distance:
                     min_distance = distance
-                    nearest_cluster_radius = max(cluster.radius, 0.1)  # Tránh chia cho 0
-            
+                    nearest_cluster_radius = max(cluster.radius, 0.1)
+
             # chuẩn hóa distance(khoảng cách) by cluster radius
-            # Higher normalized distance = higher outlier score
-            normalized_score = min_distance / nearest_cluster_radius
-            
-            # Apply sigmoid-like transformation to bound scores
-            outlier_score = 1.0 / (1.0 + np.exp(-normalized_score + 1))
-            outlier_scores[i] = outlier_score
+            if nearest_cluster_radius is not None:
         
+                score = min_distance / nearest_cluster_radius
+                outlier_score = 1.0 / (1.0 + np.exp(-score + 1))
+                outlier_scores[i] = outlier_score
+            else:
+                outlier_scores[i] = 1.0  # Max outlier score
+            
         return outlier_scores
     
-    def get_cluster_info(self):
-        """Get information about current micro-clusters"""
-        return {
-            'n_clusters': len(self.micro_clusters),
-            'n_outliers': len(self.outliers),
-            'cluster_sizes': [cluster.weight for cluster in self.micro_clusters],
-            'cluster_radii': [cluster.radius for cluster in self.micro_clusters]
-        }
-
+    def predict(self, X_test, threshold=1.0):
+        score = self.decision_function(X_test)
+        return (score > threshold).astype(int)
+    
 
 def process_single_configuration_fixed(args):
     """Xử lý một cấu hình MCOD (radius, window_size) cho dataset tĩnh"""
