@@ -204,11 +204,6 @@ def process_single_configuration_fixed(args):
             print(f"Process {process_id}: Không còn dữ liệu sau preprocessing")
             return None
         
-        # Log transformation
-        for col in selected_features:
-            df[col] = np.log1p(df[col].clip(lower=0))
-
-        # Giữ nguyên thứ tự dataset gốc
         print(f"Process {process_id}: Dataset shape: {df.shape}")
         
         # Phân tích dataset
@@ -218,41 +213,31 @@ def process_single_configuration_fixed(args):
         
          # Tạo mask cho BENIGN
         benign_mask = df['Label'] == 'BENIGN'
-
-       # Lấy tất cả index của BENIGN
         benign_indices = df[benign_mask].index
 
-        # Kiểm tra có đủ số lượng BENIGN để tạo window hay không
         if len(benign_indices) < window_size:
             print(f"Process {process_id}: Không đủ BENIGN trong toàn bộ dataset (chỉ có {len(benign_indices)})")
             return None
 
-       # Lấy ngẫu nhiên window_size BENIGN từ toàn dataset
         training_window_df = df.loc[benign_indices].sample(window_size, random_state=42).copy()
-        
         print(f"Process {process_id}: Training window: {len(training_window_df)} BENIGN flows")
         
-        # Label encoding
         le = LabelEncoder()
         le.fit(df['Label'].unique())
         benign_class_code = le.transform(['BENIGN'])[0]
         attack_class_code = le.transform([attack_label])[0] if attack_label in le.classes_ else 1
         
-        # SLIDING WINDOW TRÊN TOÀN BỘ DATASET 
         training_window = deque(training_window_df.to_dict('records'), maxlen=window_size)
         
         y_true = []
         y_pred = []
         
-        # Bắt đầu test từ flow thứ window_size
         start_idx = window_size
         total_test_flows = len(df) - start_idx
         
         print(f"Process {process_id}: Bắt đầu test từ flow {start_idx}, tổng {total_test_flows} flows")
         
-        # Batch processing để tối ưu
         batch_size = min(1000, max(100, total_test_flows // 20))
-        threshold = 0.5  # MCOD threshold
         
         for batch_start in range(start_idx, len(df), batch_size):
             batch_end = min(batch_start + batch_size, len(df))
@@ -264,36 +249,48 @@ def process_single_configuration_fixed(args):
             
             # Tính toán theo batch
             current_train_df = pd.DataFrame(list(training_window))
+            
+            # log transformation chỉ trên dữ liệu training hiện tại
+            for col in selected_features:
+                current_train_df[col] = np.log1p(current_train_df[col].clip(lower=0))
+
             X_train = current_train_df[selected_features].values
             
             # Standardization
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             
-            # Train MCOD model
             model = MCOD(radius=radius, min_points=5, window_size=window_size)
             model_fitted = model.fit(X_train_scaled)
             
-            # Tính toán threshold từ training data
+            threshold = None
             if model_fitted:
-                train_scores = model.decision_function(X_train_scaled)
-                # Sử dụng percentile để xác định threshold
-                threshold = np.percentile(train_scores, 75)  # Top 25% là outliers
-            
+                try:
+                    train_scores = model.decision_function(X_train_scaled)
+                    threshold = float(np.percentile(train_scores, 80))
+                except Exception:
+                    threshold = 0.5
+            else:
+                threshold = 1.0
+                
             # Test trên batch
             for idx in range(batch_start, batch_end):
                 flow = df.iloc[idx]
                 
+                
                 # Prediction
                 if model_fitted:
                     X_current = np.array([[flow[col] for col in selected_features]])
+                    
+                    #  log transformation cho điểm dữ liệu test
+                    X_current = np.log1p(np.clip(X_current, a_min=0, a_max=None))
+                    
                     X_current_scaled = scaler.transform(X_current)
                     current_score = model.decision_function(X_current_scaled)[0]
                     prediction = attack_class_code if current_score > threshold else benign_class_code
                 else:
                     prediction = benign_class_code
                 
-                # Ground truth
                 true_label = le.transform([flow['Label']])[0]
                 y_true.append(true_label)
                 y_pred.append(prediction)
@@ -302,7 +299,6 @@ def process_single_configuration_fixed(args):
                 if flow['Label'] == 'BENIGN':
                     training_window.append(flow.to_dict())
             
-            # Memory management
             if (batch_start - start_idx) % 10000 == 0:
                 gc.collect()
 
@@ -394,7 +390,7 @@ def plot_results_corrected(results_df, attack_label):
     # Detection rate
     for i, radius in enumerate(radius_values):
         radius_data = results_df[results_df['radius'] == radius].sort_values('window_size')
-        if len(radius_data) > 0:
+        if len(radius_data) > 0 and radius_data['attack_flows'].sum() > 0:
             detection_rate = radius_data['true_positives'] / radius_data['attack_flows']
             ax1.plot(radius_data['window_size'], detection_rate, 
                     color=colors[i], linewidth=2, marker='s', 
@@ -410,7 +406,7 @@ def plot_results_corrected(results_df, attack_label):
     # False positive rate
     for i, radius in enumerate(radius_values):
         radius_data = results_df[results_df['radius'] == radius].sort_values('window_size')
-        if len(radius_data) > 0:
+        if len(radius_data) > 0 and radius_data['benign_flows'].sum() > 0:
             fpr = radius_data['false_positives'] / radius_data['benign_flows']
             ax2.plot(radius_data['window_size'], fpr, 
                     color=colors[i], linewidth=2, marker='^', 
@@ -428,7 +424,7 @@ def plot_results_corrected(results_df, attack_label):
 def main():
     # Tham số cấu hình cho MCOD
     WINDOW_SIZES = [60, 70, 80, 90, 100, 110, 120, 130, 140, 150]
-    RADIUS_LIST = [0.3, 0.5, 0.7, 1.0, 1.2, 1.5, 2.0, 2.5]  # Micro-cluster radius 
+    RADIUS_LIST = [0.3, 0.5, 0.7, 1.0, 1.2, 1.5, 2.0, 2.5]
     
     selected_features = [
         'Flow_Packets/s', 'Flow_Duration', 'Packet_Length_Mean',
@@ -441,13 +437,11 @@ def main():
     
     max_workers = min(mp.cpu_count() - 1, 8)
     
-    # Tạo tất cả cấu hình
     configurations = []
     for radius in RADIUS_LIST:
         for ws in WINDOW_SIZES:
             configurations.append((radius, ws, data_file_path, selected_features, ATTACK_LABEL, sample_ratio))
     
-    # Chạy song song
     results = []
     start_time = time.time()
     
@@ -482,7 +476,6 @@ def main():
         print("Không có kết quả nào!")
         return
     
-    # Phân tích kết quả
     results_df = pd.DataFrame(results)
     
     plot_results_corrected(results_df, ATTACK_LABEL)
@@ -491,3 +484,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
